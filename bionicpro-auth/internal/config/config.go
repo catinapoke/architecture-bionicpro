@@ -20,6 +20,7 @@ type Config struct {
 	CookieSecure        bool
 	SessionTTL          time.Duration
 	CORSOrigin          string
+	DatabaseURL         string
 }
 
 func Load() (Config, error) {
@@ -36,6 +37,7 @@ func Load() (Config, error) {
 		CookieSecure:        getEnvBool("COOKIE_SECURE", false),
 		SessionTTL:          getEnvDuration("SESSION_TTL", 30*time.Minute),
 		CORSOrigin:          getEnv("CORS_ORIGIN", "http://localhost:3000"),
+		DatabaseURL:         getEnv("DATABASE_URL", "postgres://auth_user:auth_password@localhost:5434/auth_db?sslmode=disable"),
 	}
 
 	if cfg.KeycloakInternalURL == "" {
@@ -43,6 +45,9 @@ func Load() (Config, error) {
 	}
 	if cfg.ClientSecret == "" {
 		return Config{}, fmt.Errorf("KEYCLOAK_CLIENT_SECRET is required")
+	}
+	if cfg.DatabaseURL == "" {
+		return Config{}, fmt.Errorf("DATABASE_URL is required")
 	}
 
 	return cfg, nil

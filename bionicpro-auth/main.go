@@ -12,6 +12,7 @@ import (
 	"bionicpro-auth/internal/config"
 	"bionicpro-auth/internal/handlers"
 	"bionicpro-auth/internal/oidcauth"
+	"bionicpro-auth/internal/profile"
 	"bionicpro-auth/internal/session"
 )
 
@@ -36,8 +37,22 @@ func main() {
 		log.Fatalf("oidc: %v", err)
 	}
 
+	var profiles *profile.Store
+	for i := 0; i < 10; i++ {
+		profiles, err = profile.NewStore(cfg.DatabaseURL)
+		if err == nil {
+			break
+		}
+		log.Printf("waiting for profile db: %v", err)
+		time.Sleep(2 * time.Second)
+	}
+	if err != nil {
+		log.Fatalf("profile store: %v", err)
+	}
+	defer profiles.Close()
+
 	store := session.NewStore(cfg.SessionTTL)
-	h := handlers.New(cfg, oidcClient, store)
+	h := handlers.New(cfg, oidcClient, store, profiles)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

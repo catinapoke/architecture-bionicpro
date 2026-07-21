@@ -13,20 +13,23 @@ import (
 
 	"bionicpro-auth/internal/config"
 	"bionicpro-auth/internal/oidcauth"
+	"bionicpro-auth/internal/profile"
 	"bionicpro-auth/internal/session"
 )
 
 type Handler struct {
-	cfg   config.Config
-	oidc  *oidcauth.Client
-	store *session.Store
+	cfg      config.Config
+	oidc     *oidcauth.Client
+	store    *session.Store
+	profiles *profile.Store
 }
 
-func New(cfg config.Config, oidcClient *oidcauth.Client, store *session.Store) *Handler {
+func New(cfg config.Config, oidcClient *oidcauth.Client, store *session.Store, profiles *profile.Store) *Handler {
 	return &Handler{
-		cfg:   cfg,
-		oidc:  oidcClient,
-		store: store,
+		cfg:      cfg,
+		oidc:     oidcClient,
+		store:    store,
+		profiles: profiles,
 	}
 }
 
@@ -92,7 +95,10 @@ func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess, err := h.store.Create(tok.AccessToken, tok.RefreshToken, oidcauth.IDToken(tok), oidcauth.AccessExpiry(tok))
+	idToken := oidcauth.IDToken(tok)
+	h.persistProfile(r, idToken) // пропускаем ошибку
+
+	sess, err := h.store.Create(tok.AccessToken, tok.RefreshToken, idToken, oidcauth.AccessExpiry(tok))
 	if err != nil {
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
@@ -100,6 +106,19 @@ func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
 
 	h.setSessionCookie(w, sess.ID, sess.ExpiresAt)
 	http.Redirect(w, r, h.cfg.FrontendURL, http.StatusFound)
+}
+
+func (h *Handler) persistProfile(r *http.Request, idToken string) {
+	if h.profiles == nil {
+		return
+	}
+	p, ok := profile.FromIDToken(idToken)
+	if !ok {
+		return
+	}
+	if err := h.profiles.Upsert(r.Context(), p); err != nil {
+		log.Printf("profile upsert failed: %v", err)
+	}
 }
 
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {

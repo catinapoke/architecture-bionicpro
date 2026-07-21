@@ -39,6 +39,19 @@ Access токены используются для обращения к сер
 Добавлена поддержка OTP через настройки Authorization и протестировано. 
 Добавлена поддержка Yandex Identity providers через плагин https://github.com/playa-ru/keycloak-russian-providers
 
+После успешного входа черезе Яндекс ID bionicpro-auth сохраняет профиль из ID token в PostgreSQL (таблица user_profiles).
+
+Проверка подтвержила успешное сохранение данных
+```
+docker compose exec auth_db psql -U auth_user -d auth_db \
+  -c 'SELECT subject, username, email, provider FROM user_profiles;'
+
+               subject                |  username  |        email         | provider 
+--------------------------------------+------------+----------------------+----------
+ 72e3eca7-d79d-4faa-ae7f-e4f30d9b1cc1 | frozenmike | frozenmike@yandex.ru | keycloak
+(1 row)
+```
+
 Дополнительно был добавлен в Report вывод данных по сессии для проверки работы ldap и вывода логина.
 
 ![](task1/otp.png)
