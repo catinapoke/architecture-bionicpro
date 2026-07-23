@@ -58,6 +58,7 @@ docker compose exec auth_db psql -U auth_user -d auth_db \
 ![](task1/yandex-idp.png)
 ![](task1/yandex-login.png)
 ![](task1/yandex-openid.png)
+![](task1/debug_report.png)
 
 ## Задание 2
 
@@ -94,6 +95,13 @@ docker compose exec auth_db psql -U auth_user -d auth_db \
 - signals_count int64
 
 Для витрины данных создам view, а для изначальных данных - таблицы. 
+
+Для обработки запросов отчета реализовал сервис bionicpro-reports, а сервис bionicpro-auth теперь работатет как bff, чтобы не добавлять nginx и его настройки по прокисированию. Так сохраняется обработка сессий и в то же время сохраняется проверка токенов - новый сервис сверяет их по публичным ключам keycloak.
+
+Отчет теперь не отладочный, а корректный.
+![](./task2/report.png)
+
+## Задание 3
 
 
 # Описание проектной работы 

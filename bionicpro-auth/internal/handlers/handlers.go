@@ -153,18 +153,29 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request, sess *session.Sessi
 }
 
 func (h *Handler) reports(w http.ResponseWriter, r *http.Request, sess *session.Session) {
-	// Protected resource: tokens stay on the server; frontend only has the session cookie.
-	authInfo := accessTokenReportInfo(sess.AccessToken)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"report":         "BionicPRO usage report",
-		"generatedAt":    time.Now().UTC().Format(time.RFC3339),
-		"session_id":     sess.ID,
-		"user":           authInfo.User,
-		"roles":          authInfo.Roles,
-		"canViewReports": hasRole(authInfo.Roles, "prothetic_user"),
-		"roleSource":     authInfo.RoleSource,
-		"note":           "access_token used server-side only",
-	})
+	reportURL := strings.TrimRight(h.cfg.ReportURL, "/") + "/reports"
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, reportURL, nil)
+	if err != nil {
+		http.Error(w, "failed to create report request", http.StatusInternalServerError)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+sess.AccessToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("report service request failed: %v", err)
+		http.Error(w, "report service unavailable", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	if contentType := resp.Header.Get("Content-Type"); contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	w.WriteHeader(resp.StatusCode)
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		log.Printf("report response copy failed: %v", err)
+	}
 }
 
 type reportAuthInfo struct {

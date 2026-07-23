@@ -91,12 +91,37 @@ services:
       COOKIE_SECURE: "false"
       SESSION_TTL: 30m
       DATABASE_URL: postgres://auth_user:auth_password@auth_db:5432/auth_db?sslmode=disable
+      REPORT_URL: http://report:8001
     restart: on-failure
     depends_on:
       keycloak:
         condition: service_started
       auth_db:
         condition: service_healthy
+      report:
+        condition: service_started
+
+  report:
+    build:
+      context: ./bionicpro-report
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      API_PORT: 8001
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_PUBLIC_URL: http://localhost:8080
+      KEYCLOAK_REALM: reports-realm
+      DB_URL: postgres://airflow:airflow@airflow_db:5432/sample?sslmode=disable
+    restart: on-failure
+    depends_on:
+      keycloak:
+        condition: service_started
+      airflow_db:
+        condition: service_healthy
+    networks:
+      - default
+      - dag_sample
 
   auth_db:
     image: postgres:14

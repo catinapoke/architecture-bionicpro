@@ -74,6 +74,9 @@ const ReportPage: React.FC = () => {
       }
 
       if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('Report data is not ready yet.');
+        }
         throw new Error(`Request failed: ${response.status}`);
       }
 

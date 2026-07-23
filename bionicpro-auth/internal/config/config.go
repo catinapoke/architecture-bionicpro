@@ -21,6 +21,7 @@ type Config struct {
 	SessionTTL          time.Duration
 	CORSOrigin          string
 	DatabaseURL         string
+	ReportURL           string
 }
 
 func Load() (Config, error) {
@@ -38,6 +39,7 @@ func Load() (Config, error) {
 		SessionTTL:          getEnvDuration("SESSION_TTL", 30*time.Minute),
 		CORSOrigin:          getEnv("CORS_ORIGIN", "http://localhost:3000"),
 		DatabaseURL:         getEnv("DATABASE_URL", "postgres://auth_user:auth_password@localhost:5434/auth_db?sslmode=disable"),
+		ReportURL:           getEnv("REPORT_URL", "http://localhost:8001"),
 	}
 
 	if cfg.KeycloakInternalURL == "" {

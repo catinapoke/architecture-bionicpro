@@ -11,6 +11,9 @@ default_args = {
     'start_date': datetime(2024, 12, 1),
 }
 
+def sql_value(value):
+    return "'" + value.replace("'", "''") + "'"
+
 def generate_insert_queries_clients():
     CSV_FILE_PATH = 'data/clients.csv'
     with open( CSV_FILE_PATH, 'r') as csvfile:
@@ -23,7 +26,7 @@ def generate_insert_queries_clients():
             if is_header:
                 is_header = False
                 continue
-            insert_query = f"INSERT INTO clients (id,username,name,created_at) VALUES ({row[0]}, {row[1]}, {row[2]}, {row[3]}) ON CONFLICT DO NOTHING;"
+            insert_query = f"INSERT INTO clients (id,username,name,created_at) VALUES ({row[0]}, {sql_value(row[1])}, {sql_value(row[2])}, {sql_value(row[3])}) ON CONFLICT DO NOTHING;"
             insert_queries.append(insert_query)
 
     return insert_queries
@@ -40,7 +43,7 @@ def generate_insert_queries_prostheses():
             if is_header:
                 is_header = False
                 continue
-            insert_query = f"INSERT INTO prostheses (id,name,created_at,client_id) VALUES ({row[0]}, {row[1]}, {row[2]}, {row[3]}) ON CONFLICT DO NOTHING;"
+            insert_query = f"INSERT INTO prostheses (id,name,created_at,client_id) VALUES ({sql_value(row[0])}, {sql_value(row[1])}, {sql_value(row[2])}, {row[3]}) ON CONFLICT DO NOTHING;"
             insert_queries.append(insert_query)
 
     return insert_queries
@@ -57,7 +60,7 @@ def generate_insert_queries_signals():
             if is_header:
                 is_header = False
                 continue
-            insert_query = f"INSERT INTO signals (id,prothesis_id,rotation_x,rotation_y,rotation_z,signal_force,created_at) VALUES ({row[0]}, {row[1]}, {row[2]}, {row[3]}, {row[4]}, {row[5]}, {row[6]}) ON CONFLICT DO NOTHING;"
+            insert_query = f"INSERT INTO telemetry (id,prothesis_id,rotation_x,rotation_y,rotation_z,signal_force,created_at) VALUES ({row[0]}, {sql_value(row[1])}, {row[2]}, {row[3]}, {row[4]}, {row[5]}, {sql_value(row[6])}) ON CONFLICT DO NOTHING;"
             insert_queries.append(insert_query)
 
     return insert_queries

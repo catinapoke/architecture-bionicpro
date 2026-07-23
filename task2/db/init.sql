@@ -1,6 +1,8 @@
 CREATE DATABASE sample;
 GRANT ALL PRIVILEGES ON DATABASE sample TO airflow; 
 
+\connect sample
+
 CREATE TABLE clients (
     id SERIAL PRIMARY KEY,
     username TEXT NOT NULL,
@@ -12,7 +14,7 @@ CREATE TABLE prostheses (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
-    client_id TEXT NOT NULL REFERENCES clients(id)
+    client_id INTEGER NOT NULL REFERENCES clients(id)
 );
 
 CREATE TABLE telemetry (
@@ -30,9 +32,9 @@ SELECT
     c.username,
     c.name,
     c.created_at,
-    p.name AS prosthesis_name,
-    COUNT(t.id) AS signals_count
+    COALESCE(array_agg(DISTINCT p.id) FILTER (WHERE p.id IS NOT NULL), '{}') AS prothesis_ids,
+    COUNT(t.id)::bigint AS signals_count
 FROM clients c
-JOIN prostheses p ON c.id = p.client_id
-JOIN telemetry t ON p.id = t.prothesis_id
-GROUP BY c.username, c.name, c.created_at, p.name;
+LEFT JOIN prostheses p ON c.id = p.client_id
+LEFT JOIN telemetry t ON p.id = t.prothesis_id
+GROUP BY c.username, c.name, c.created_at;
