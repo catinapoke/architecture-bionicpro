@@ -80,7 +80,17 @@ const ReportPage: React.FC = () => {
         throw new Error(`Request failed: ${response.status}`);
       }
 
-      const data = await response.json();
+      const payload = (await response.json()) as { url?: string };
+      if (!payload.url) {
+        throw new Error('Report URL is missing in response.');
+      }
+
+      const reportResponse = await fetch(payload.url);
+      if (!reportResponse.ok) {
+        throw new Error(`Failed to download report: ${reportResponse.status}`);
+      }
+
+      const data = await reportResponse.json();
       setReport(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');

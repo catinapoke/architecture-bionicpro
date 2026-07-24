@@ -1,9 +1,12 @@
 from airflow import DAG
+from airflow.hooks.base import BaseHook
 from airflow.operators.python import PythonOperator
-from airflow.providers.postgres.operators.postgres import SQLExecuteQueryOperator
 
 from datetime import datetime
 import csv
+from decimal import Decimal
+
+import clickhouse_connect
 
 # Аргументы по умолчанию: владелец процесса и время отсчёта для задачи
 default_args = {
@@ -11,92 +14,114 @@ default_args = {
     'start_date': datetime(2024, 12, 1),
 }
 
-def sql_value(value):
-    return "'" + value.replace("'", "''") + "'"
+DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S'
+CLICKHOUSE_CONN_ID = 'clickhouse_default'
 
-def generate_insert_queries_clients():
-    CSV_FILE_PATH = 'data/clients.csv'
-    with open( CSV_FILE_PATH, 'r') as csvfile:
-        csvreader = csv.reader(csvfile)
 
-        # Генерим запросы
-        insert_queries = []
-        is_header = True
-        for row in csvreader:
-            if is_header:
-                is_header = False
-                continue
-            insert_query = f"INSERT INTO clients (id,username,name,created_at) VALUES ({row[0]}, {sql_value(row[1])}, {sql_value(row[2])}, {sql_value(row[3])}) ON CONFLICT DO NOTHING;"
-            insert_queries.append(insert_query)
+def clickhouse_client():
+    conn = BaseHook.get_connection(CLICKHOUSE_CONN_ID)
+    return clickhouse_connect.get_client(
+        host=conn.host,
+        port=conn.port or 8123,
+        database=conn.schema or 'reports',
+        username=conn.login or 'default',
+        password=conn.password or '',
+    )
 
-    return insert_queries
 
-def generate_insert_queries_prostheses():
-    CSV_FILE_PATH = 'data/sales.csv'
-    with open( CSV_FILE_PATH, 'r') as csvfile:
-        csvreader = csv.reader(csvfile)
+def parse_datetime(value):
+    return datetime.strptime(value, DATETIME_FORMAT)
 
-        # Генерим запросы
-        insert_queries = []
-        is_header = True
-        for row in csvreader:
-            if is_header:
-                is_header = False
-                continue
-            insert_query = f"INSERT INTO prostheses (id,name,created_at,client_id) VALUES ({sql_value(row[0])}, {sql_value(row[1])}, {sql_value(row[2])}, {row[3]}) ON CONFLICT DO NOTHING;"
-            insert_queries.append(insert_query)
 
-    return insert_queries
+def read_csv(path):
+    with open(path, 'r', newline='') as csvfile:
+        return list(csv.DictReader(csvfile))
 
-def generate_insert_queries_signals():
-    CSV_FILE_PATH = 'data/signals.csv'
-    with open( CSV_FILE_PATH, 'r') as csvfile:
-        csvreader = csv.reader(csvfile)
 
-        # Генерим запросы
-        insert_queries = []
-        is_header = True
-        for row in csvreader:
-            if is_header:
-                is_header = False
-                continue
-            insert_query = f"INSERT INTO telemetry (id,prothesis_id,rotation_x,rotation_y,rotation_z,signal_force,created_at) VALUES ({row[0]}, {sql_value(row[1])}, {row[2]}, {row[3]}, {row[4]}, {row[5]}, {sql_value(row[6])}) ON CONFLICT DO NOTHING;"
-            insert_queries.append(insert_query)
+def load_raw_data():
+    client = clickhouse_client()
 
-    return insert_queries
+    client.command('TRUNCATE TABLE aggregated_data')
+    client.command('TRUNCATE TABLE telemetry')
+    client.command('TRUNCATE TABLE prostheses')
+    client.command('TRUNCATE TABLE clients')
 
-def generate_insert_queries():
-    insert_queries_clients = generate_insert_queries_clients()
-    insert_queries_prostheses = generate_insert_queries_prostheses()
-    insert_queries_signals = generate_insert_queries_signals()
+    clients = [
+        [
+            int(row['id']),
+            row['username'],
+            row['name'],
+            parse_datetime(row['created_at']),
+        ]
+        for row in read_csv('data/clients.csv')
+    ]
+    prostheses = [
+        [
+            row['id'],
+            row['name'],
+            parse_datetime(row['created_at']),
+            int(row['client_id']),
+        ]
+        for row in read_csv('data/sales.csv')
+    ]
+    telemetry = [
+        [
+            int(row['id']),
+            row['prothesis_id'],
+            Decimal(row['rotation_x']),
+            Decimal(row['rotation_y']),
+            Decimal(row['rotation_z']),
+            Decimal(row['signal_force']),
+            parse_datetime(row['created_at']),
+        ]
+        for row in read_csv('data/signals.csv')
+    ]
 
-    # Сохраняем запросы
-    with open('./dags/sql/insert_queries.sql', 'w') as f:
-        for query in insert_queries_clients:
-            f.write(f"{query}\n")
-        for query in insert_queries_prostheses:
-            f.write(f"{query}\n")
-        for query in insert_queries_signals:
-            f.write(f"{query}\n")
+    client.insert(
+        'clients',
+        data=clients,
+        column_names=['id', 'username', 'name', 'created_at'],
+    )
+    client.insert(
+        'prostheses',
+        data=prostheses,
+        column_names=['id', 'name', 'created_at', 'client_id'],
+    )
+    client.insert(
+        'telemetry',
+        data=telemetry,
+        column_names=[
+            'id',
+            'prothesis_id',
+            'rotation_x',
+            'rotation_y',
+            'rotation_z',
+            'signal_force',
+            'created_at',
+        ],
+    )
+
+
+def build_mart():
+    client = clickhouse_client()
+    # aggregated_data is filled by aggregated_data_mv during telemetry inserts.
+    client.command('OPTIMIZE TABLE aggregated_data FINAL')
+
 
 # Определяем DAG
 with DAG('prothesis_dag',
          default_args=default_args, #аргументы по умолчанию в начале скрипта
-         schedule_interval='@once', #запускаем один раз
+         schedule_interval='@daily',
          catchup=False) as dag: #предотвращает повторное выполнение DAG для пропущенных расписаний.
 
-    #Опеределяем оператор для вставки данных
-    generate_queries = PythonOperator(
-        task_id='generate_insert_queries',
-        python_callable=generate_insert_queries
+    load_raw = PythonOperator(
+        task_id='load_raw_data',
+        python_callable=load_raw_data
     )
 
-    #Запускаем выполнение оператора SQLExecuteQueryOperator
-    run_insert_queries = SQLExecuteQueryOperator(
-        task_id='run_insert_queries',
-        conn_id='data_postgres',  # Название подключения к PostgreSQL в Airflow UI
-        sql='sql/insert_queries.sql'
+    rebuild_mart = PythonOperator(
+        task_id='build_mart',
+        python_callable=build_mart
     )
-    
-    generate_queries>>run_insert_queries
-    # Тут дальше можно продолжать пайплайн 
+
+    load_raw >> rebuild_mart
