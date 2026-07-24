@@ -39,6 +39,9 @@ def read_csv(path):
 
 
 def load_raw_data():
+    # Отключено: Загрузка отчётных данных теперь идёт через CDC: CRM -> Debezium -> Kafka -> ClickHouse.
+    return
+
     client = clickhouse_client()
 
     client.command('TRUNCATE TABLE aggregated_data')
@@ -103,6 +106,9 @@ def load_raw_data():
 
 
 def build_mart():
+    # Отключено: Витрина обновляется MaterializedView при вставках, пришедших из KafkaEngine.
+    return
+
     client = clickhouse_client()
     # aggregated_data is filled by aggregated_data_mv during telemetry inserts.
     client.command('OPTIMIZE TABLE aggregated_data FINAL')

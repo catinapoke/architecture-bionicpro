@@ -117,6 +117,15 @@ docker compose exec auth_db psql -U auth_user -d auth_db \
 
 ## Задание 4
 
+Для решения задачи добавим новую crm_db, откуда будет получать данные по CDC с Debezium. 
+Данные будут поступать в Kafka поднятую через Kraft в топики `crm.public.*`.
+Далее Clickhouse через встроенный механизм читает топики в таблицы `*_kafka`.
+
+Materialized View из KafkaEngine перекладывает данные в старые raw-таблицы clients, prostheses, telemetry. Для таблиц данных поменял engine на ReplacingMergeTree, чтобы сохранялась идемпотентность.
+
+aggregated_data_mv и сервис bionicpro-report не менялись.
+Airflow DAG отключен(см. коммент `# Отключено: `), чтобы не выполнять truncate и не конфликтовать с CDC.
+
 
 # Описание проектной работы 
 
@@ -346,6 +355,42 @@ docker compose exec auth_db psql -U auth_user -d auth_db \
 3. Настройте приём данных из топика Kafka в OLAP БД Clickhouse с помощью механизма KafkaEngine.
 4. Подготовьте витрину для отчётности, объединив данные при помощи MaterializedView в Clickhouse.
 5. Переведите сервис API на новую витрину.
+
+## Ход решения
+
+Для разделения OLTP-нагрузки CRM и аналитической выгрузки добавлен поток CDC:
+
+```mermaid
+flowchart LR
+  CRM["crm_db Postgres"] --> Debezium["Debezium Connect"]
+  Debezium --> Kafka["Kafka KRaft broker"]
+  Kafka --> KafkaEngine["ClickHouse KafkaEngine"]
+  KafkaEngine --> Raw["clients/prostheses/telemetry"]
+  Raw --> Mart["aggregated_data"]
+  Mart --> API["bionicpro-report"]
+```
+
+Добавлен сервис `crm_db` с таблицами `clients`, `prostheses`, `telemetry`. Данные для стартового состояния загружаются из `task2/dags/sql/insert_queries.sql`, а для Debezium включены `wal_level=logical`, replication slot и publication `debezium_publication`.
+
+Kafka поднята одной нодой в режиме KRaft, без Zookeeper. Debezium Connect регистрирует коннектор `debezium/crm-connector.json` через `task4/scripts/register-connector.sh` и пишет изменения в топики:
+
+- `crm.public.clients`
+- `crm.public.prostheses`
+- `crm.public.telemetry`
+
+ClickHouse принимает эти топики через KafkaEngine-таблицы из `task4/clickhouse/kafka.sql`. Материализованные представления перекладывают события в таблицы `clients`, `prostheses`, `telemetry`, а витрина `aggregated_data` сохраняет прежний контракт для сервиса отчётов.
+
+Airflow DAG `prothesis_dag` больше не выполняет массовую загрузку и `TRUNCATE` ClickHouse-таблиц. Он оставлен как no-op DAG, чтобы старый batch-путь не влиял на CDC.
+
+Проверка:
+
+```bash
+docker compose up -d --build crm_db kafka connect clickhouse clickhouse-cdc-init connect-init report
+docker compose exec connect curl -s http://localhost:8083/connectors/crm-connector/status
+docker compose exec clickhouse clickhouse-client --password clickhouse --query "SELECT count() FROM reports.telemetry"
+docker compose exec crm_db psql -U crm_user -d crm -c "INSERT INTO telemetry (id, prothesis_id, rotation_x, rotation_y, rotation_z, signal_force, created_at) VALUES (1001, '1', 1.10, 2.20, 3.30, 4.40, now()) ON CONFLICT DO NOTHING;"
+docker compose exec clickhouse clickhouse-client --password clickhouse --query "SELECT countMerge(signals_count_state) FROM reports.aggregated_data"
+```
 
 # Как сдать работу
 

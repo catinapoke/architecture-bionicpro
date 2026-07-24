@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS reports.clients
     name String,
     created_at DateTime
 )
-ENGINE = MergeTree
+ENGINE = ReplacingMergeTree
 ORDER BY id;
 
 CREATE TABLE IF NOT EXISTS reports.prostheses
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS reports.prostheses
     created_at DateTime,
     client_id UInt32
 )
-ENGINE = MergeTree
+ENGINE = ReplacingMergeTree
 ORDER BY (client_id, id);
 
 CREATE TABLE IF NOT EXISTS reports.telemetry
@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS reports.telemetry
     signal_force Decimal(10, 2),
     created_at DateTime
 )
-ENGINE = MergeTree
+ENGINE = ReplacingMergeTree
 ORDER BY (prothesis_id, id);
 
 CREATE TABLE IF NOT EXISTS reports.aggregated_data
