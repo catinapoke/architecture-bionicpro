@@ -1,0 +1,2 @@
+-- Airflow metadata is initialized by `airflow db init`.
+-- Reporting data lives in ClickHouse; see task2/clickhouse/init.sql.
